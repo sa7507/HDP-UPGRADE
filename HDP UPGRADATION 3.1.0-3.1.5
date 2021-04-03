@@ -1,0 +1,464 @@
+**********Upgrade HDP 3.1.0 to HDP 3.1.5*************
+
+Reference link: https://docs.cloudera.com/HDPDocuments/Ambari-2.7.3.0/bk_ambari-upgrade/content/ambari_upgrade_guide.html
+
+When preparing to upgrade Ambari and the HDP Cluster, we strongly recommend you review this checklist of items to confirm your cluster operation is healthy. 
+Attempting to upgrade a cluster that is operating in an unhealthy state can produce unexpected results
+Always ensure that you are using the most recent version of Ambari to perform your upgrade.
+1.Ensure all services in the cluster are running.
+2.Run each Service Check (found under the Service Actions menu) and confirm they execute successfully.
+3.Clear all alerts, or understand why they are being generated. Remediate as necessary.
+4.Confirm start and stop for all services are executing successfully.
+5.Time service start and stops. The time to start and stop services is a big contributor to overall upgrade time so having this information handy is useful.
+6.Download the software packages prior to the upgrade. Place them in a local repository and/or consider using a storage proxy since multi-gigabyte downloads will be required on all nodes in the cluster.
+7.Ensure point-in-time backups are taken of all databases that support the cluster. This includes (among others) Ambari, Hive, Ranger, Druid, Superset, and Oozie.
+
+FOR LARGE CLUSTERS
+
+In a large cluster, NameNode startup processes can take a long time. NameNode startup time depends not only on host properties, 
+but also on data volume and network parameters. To ensure that the Ambari requests to start the NameNode do not timeout during an upgrade, 
+you should configure the Ambari NameNode restart timeout parameter, upgrade.parameter.nn-restart.timeout in /etc/ambari-server/conf/ambari.properties on the 
+Ambari Server host. You may need to add the restart timeout parameter and value to the Ambari server host, following a default installation. 
+For a large cluster, you should add ten percent to the usual time (in seconds) required to restart your NameNode. 
+Although no standard way to determine an appropriate value exists, you may use the following guidance:
+
+For example, record the time (seconds) required to restart the active NameNode for your current Ambari server version. 
+If restarting takes 10 minutes, (600 seconds), then add
+upgrade.parameter.nn-restart.timeout=660 to the /etc/ambari-server/conf/ambari.properties file on the Ambari Server host.
+
+After adding or resetting the Ambari NameNode restart parameter, restart your Ambari server before starting the HDP upgrade.
+$ambari-server restart
+
+FOR AMBARI UPGRADES
+Be sure to review the Known Issues and Behavioral Changes for this Ambari-2.7.3 release.
+
+FOR HDP CLUSTER UPGRADES
+1.Ensure sufficient disk space on /usr/hdp/<version> (roughly 3GB for each additional HDP release).
+2.If your cluster includes Storm, document any running Storm topologies, as they will need to be stopped during the upgrade process.
+
+SUPPORT MATRIX:-->>
+Ambari 2.7.5
+HDP 3.1.5
+HDF 3.5.2  3.5.1  3.5.0
+DP Platform 1.3.1  1.3.0  1.2.3
+DLM  1.5.1
+DSS  1.6.1  1.6.0
+SMM  2.0.0
+SRM  1.0.0
+DAS  1.4.5  1.4.4
+DAS-Lite  1.4.5  1.4.4
+SmartSense  1.5.1
+O.S
+RHEL	7.9  7.8  7.7  7.6  7.5  7.4  7.3  7.2
+CentOS	7.9  7.8  7.7  7.6  7.5  7.4 7.3  7.2
+Oracle	7.9  7.8  7.7  7.6  7.5  7.4  7.3  7.2
+Amazon Linux	2
+Ubuntu	18.04  16.04
+Debian	9
+SUSE	12SP5  12SP4  12SP3  12SP2
+DATABASES
+OracleDB	19 12c 11gr2 -->> Not supported with DRUID
+PostgreSQL	10.7  10.5  10.2  9.6
+MySQL	5.7 -->> use of an existing MySQL 5.7 DB is only supported with default, InnoDB engine
+MariaDB	10.2
+JDK
+OpenJDK/OracleJDK JDK8
+PROCESSOR
+IBM Power Systems	Power 8  Power 9
+x86	  x86-64
+
+**********UPGRADING AMBARI**********
+​>>>Preparing to Upgrade Ambari
+1.Be sure to review the Ambari 2.7.3.0 release notes for Known Issues and Behavioral Changes.
+2.You must have root, administrative, or root-equivalent authorization on the Ambari Server host and all Ambari Agent hosts in the cluster.
+3.You must backup the Ambari Server database.
+4.You must make a safe copy of the Ambari Server configuration file found at /etc/ambari-server/conf/ambari.properties.
+5.If your cluster is SSO-enabled, do not stop Knox before upgrading Ambari.
+**During Ambari upgrade, the existing /var/lib/ambari-server/ambari-env.sh file is overwritten and a backup copy of ambari-env.sh (with extension .rpmsave) is 
+created. If you have manually modified ambari-env.sh (for example, to change Ambari Server heap), you will need to re-apply your changes to the new file.
+
+>>The high-level process for upgrading Ambari is as follows:CHECK THE LINK
+
+https://docs.cloudera.com/HDPDocuments/Ambari-2.7.3.0/bk_ambari-upgrade/content/figures/1/figures/AmbariUpgradeFlow.png
+
+>>UPGRADE AMBARI
+1.If you are running Ambari Metrics in your cluster, stop the service and put it in Maintenance Mode.
+  From Ambari Web, browse to Services > Ambari Metrics and select Stop from the Service Actions menu.
+2.Stop the Ambari Server. On the host running Ambari Server
+  $ambari-server stop
+3.Stop all Ambari Agents. On each host in your cluster running an Ambari Agent:
+  $ambari-agent stop
+4.Fetch the new Ambari repo and replace the old repository file with the new repository file ON ALL HOSTS IN YOUR CLUSTER.
+  	IMPORTANT
+       Check your current directory before you download the new repository file to make sure that there are no previous versions of the ambari.repo file. 
+	   If you do not, and a previous version exists, the new download will be saved with a numeric extension, such as ambari.repo.1. 
+	   Make sure that the version you copy is the new version
+
+  $wget -nv https://username:password@archive.cloudera.com/p/ambari/centos7/2.x/updates/2.7.5.0/ambari.repo -O /etc/yum.repos.d/ambari.repo
+    
+	**Instead of Username and Password provide proper credentials
+	
+	>> Base URL  	        https://archive.cloudera.com/p/ambari/centos7/2.x/updates/2.7.5.0
+    >> Repo File	        https://archive.cloudera.com/p/ambari/centos7/2.x/updates/2.7.5.0/ambari.repo
+    >> Tarball md5 | asc	https://archive.cloudera.com/p/ambari/centos7/2.x/updates/2.7.5.0/ambari-2.7.5.0-centos7.t
+	
+5.Upgrade Ambari Server. On the host running Ambari Server
+  $yum clean all
+  $yum info ambari-server
+                          In the info output, visually validate that there is an available version containing "2.7"
+  $yum upgrade ambari-server
+6.Check for upgrade success by noting progress during the Ambari Server installation process you started in Step 8.
+  a.As the process runs, the console displays output similar, although not identical, to the following:
+   >Setting up Upgrade Process Resolving Dependencies --> Running transaction check
+  b.If the upgrade fails, the console displays output similar to the following:
+   >Setting up Upgrade Process No Packages marked for Update
+  c.A successful upgrade displays output similar to the following:
+   >Updated: ambari-server.noarch 0:2.7.3 Complete!
+ IMPORTANT
+    Confirm there is only one ambari-server*.jar file in /usr/lib/ambari-server. If there is more than one JAR file with name ambari-server*.jar,
+	move all JARs except ambari-server-2.7.3*.jar to /tmp before proceeding with upgrade
+	
+7.Upgrade all Ambari Agents. ON EACH HOST IN YOUR CLUSTER RUNNING AN AMBARI AGENT:
+  $yum upgrade ambari-agent    -->> Do this on all hosts <<--
+8.After the upgrade process completes, check each host to make sure the new files have been installed:
+  $rpm -qa | grep ambari-agent
+9.Upgrade Ambari Server database schema. On the host running Ambari Server:
+  $ambari-server upgrade
+    When the Ambari Server database schema has been upgraded, you should see command output like this:
+    >>Ambari Server ‘upgrade’ completed successfully
+10.Start the Ambari Server. On the host running Ambari Server:
+  $ambari-server start
+11.Start all Ambari Agents. On each host in your cluster running an Ambari Agent:
+  $ambari-agent start
+12.Open Ambari Web.
+ >Point your browser to the Ambari Web UI:
+  >When Ambari Server is configured for HTTPS:
+   https://<your.ambari.server>:8443
+  >When Ambari Server is configured for HTTP:
+   http://<your.ambari.server>:8080
+  IMPORTANT
+    Refresh your browser so that it loads the new version of the Ambari Web code. If you have problems, clear your browser cache manually, 
+	then restart Ambari Server.
+13.Log in, using the Ambari administrator credentials that you have set up.
+  For example, the default name/password is admin/admin.
+  You will see a Restart indicator next to each service after upgrading. Ambari upgrade has added to/adjusted the configuration properties of your cluster 
+  based on new configuration types and properties being made available for each service with this release of Ambari. 
+  Review these changes by comparing the previous configuration with the latest version created by "ambari-upgrade".
+ 	
+	**IMPORTANT**
+    DO NOT RESTART THESE SERVICES UNLESS FUTURE STEPS IN THE UPGRADE GUIDE PROMPT YOU TO DO SO. 
+	MANUALLY RESTARTING THESE SERVICES MAY SIGNIFICANTLY DISRUPT YOUR UPGRADE. AMBARI WILL RESTART EACH SERVICE AUTOMATICALLY DURING THE HDP UPGRADE.
+  NOTE
+  Even though the installer prompts you to sync ldap, doing so is not required.
+  
+************************UPGRADING HDP*************************
+A.Prerequisites
+B.Prepare to Upgrade
+C.Register and Install Target Version
+
+**The high-level process for performing an HDP upgrade is as follows:CHECK THE LINK
+
+https://docs.cloudera.com/HDPDocuments/Ambari-2.7.3.0/bk_ambari-upgrade/content/figures/2/figures/Upgrading_HDP_hi_level_flow27.png
+
+>>>A.Prerequisites
+
+To perform an HDP upgrade using Ambari, your cluster must meet the following prerequisites. 
+Meeting these prerequisites is essential for Ambari to know the cluster is in a healthy operating mode and can successfully manage the upgrade process.
+
+1.Disk Space
+  Be sure to have adequate space on /usr/hdp for the target HDP version. Each complete install of an HDP version will occupy about 8 GB of disk space.
+
+2.Ambari Agent Heartbeats
+  All Ambari Agents must be communicating and heartbeating to Ambari Server. Any hosts that are not heartbeating must be in Maintenance Mode.
+
+3.Hive Upgrade
+  The upgrade process does not back up the Hive MetaStore, nor does it compact ACID tables. Before upgrading Hive, you must:
+  >Manually make a manual backup of your Hive metastore database after using the pre-upgrade tool, described later, and before upgrading.
+  >If you have ACID tables in your Hive metastore, enable ACID operations using Ambari Web or set Hive configuration properties to enable ACID.
+
+4.Host Maintenance Mode
+  The following two scenarios are checked:
+  >Any hosts in Maintenance Mode must not be hosting any Service Master Components.
+  >Any host in Maintenance Mode that is not hosting Master Components is allowed but you will receive a warning. 
+   You can proceed with your upgrade but these hosts will not be upgraded and before you can finalize the upgrade, you must delete the hosts from the cluster.
+
+5.Service Maintenance Mode
+  No Services can be in Maintenance Mode, except for Ambari Metrics System, SmartSense, and Log Search.
+
+6.Services Started
+  All Services must be started, except for Ambari Metrics System, SmartSense, and Log Search.
+
+7.Service Checks
+  All Service Checks must pass. Be sure to run Service Actions > Run Service Check on all services (and remediate if necessary) 
+  prior to attempting an HDP upgrade.
+
+8.KDC Admin Credentials
+  The Ambari Server will add new components as part of the HDP 2.6 to HDP 3.0 upgrade and needs to be configured to enable password encryption and 
+  saving the KDC admin credentials so necessary principals can be created. 
+  For steps on how to do this, see Encrypt Database and LDAP Passwords in Ambari and Managing Admin Credentials.
+{  
+
+**Encrypt Database and LDAP Passwords in Ambari**
+  
+  By default the passwords to access the Ambari database and the LDAP server are stored as plain text. 
+  To have those passwords encrypted, you need to run a special setup command.
+>About this task
+    Ambari Server will not let you persist the KDC Admin password until you encrypt this database. To encrypt the Ambari Server database, 
+	you must configure a security master key, using the following steps.
+STEPS-->>
+  i.On the Ambari Server, run the special setup command and answer the prompts: 
+   $ambari-server setup-security
+  ii.Select Option 2:
+      Choose one of the following options:
+      [1] Enable HTTPS for Ambari server.
+      [2] Encrypt passwords stored in ambari.properties file.
+      [3] Setup Ambari kerberos JAAS configuration.
+  iii.Provide a master key for encrypting the passwords. You are prompted to enter the key twice for accuracy.
+      If your passwords are encrypted, you need access to the master key to start Ambari Server.
+  iv.You have three options for maintaining the master key:
+      >Persist it to a file on the server by pressing y at the prompt.
+      >Create an environment variable AMBARI_SECURITY_MASTER_KEY and set it to the key.
+      >Provide the key manually at the prompt on server start up.
+  v.Start or restart the Server: 
+    $ambari-server restart
+	
+**Managing Admin Credentials**
+
+Update KDC Admin Credentials
+ How to update previously-saved KDC credentials in Ambari.
+ABOUT THIS TASK:
+  >When you enable Kerberos, if you choose to use an Existing MIT KDC or Existing Active Directory, the Kerberos Wizard prompts for information related 
+   to the KDC, the KDC Admin Account credentials, and the Service and Ambari principals. Once provided, Ambari will automatically create principals, 
+   generate keytabs and distribute keytabs to the hosts in the cluster. The services will be configured for Kerberos and the service components are 
+   restarted to authenticate against the KDC. This is the Kerberos Automated Setup option.
+
+  >By default, Ambari will not retain the KDC Admin Account credentials you provide unless you have encrypted the passwords stored in Ambari 
+  (see “Encrypt Database and LDAP Passwords in Ambari”). If you have not configured Ambari for password encryption,you will be prompted to provide 
+   KDC Admin Account credentials whenever cluster changes are made that require KDC principal and/or keytab changes(such as adding services, components and hosts).
+
+  >If you have configured Ambari for password encryption, you will have an option to Save Admin Credentials. 
+   Ambari will use the retained KDC Admin Account credentials to make the KDC changes automatically.
+	
+NOTE
+If you do not have password encryption enabled for Ambari, the Save Admin Credentials option will not be enabled
+
+Updating KDC Credentials:
+If you have chosen to Save Admin Credentials when enabling Kerberos, you can update or remove the credentials from Ambari using the following:
+  i.In Ambari Web, browse to Cluster Admin > Kerberos and click the Manage KDC Credentials button. The Manage KDC Credentials dialog is displayed.
+  ii.If credentials have been previously saved, click Remove to remove the credentials currently stored in Ambari. 
+     Once removed, if cluster changes that require KDC principal and/or keytab changes (such as adding services, components and hosts), 
+	 you will be prompted to enter the KDC Admin Account credentials.
+  iii.Alternatively, to update the KDC Admin Account credentials, enter the Admin principal and password values and click Save.
+  
+}
+
+9.KDC Admin Host FQDN
+  Ensure that the KDC Admin host is set to a fully qualified domain name (FQDN) and not an IP address. 
+  You can check this setting by going to Services > Kerberos > Configs > KDC Hosts.
+
+10.KDC kadmin principal
+  >The MIT KDC integration in Ambari 2.7 has been improved to connect more securely with the Kerberos Administration server (kadmind). 
+   This increased security expects a Kerberos admin service principal to be present with a specifically formatted principal name. 
+   The format expected is kadmin/fully.qualified.kdc.hostname@REALM. This expectation is a behavior change from previous versions of Ambari,
+   where having such a Kerberos admin service principal was not required.
+
+  >This principal is present by default in most MIT KDC installations, but some customers have reported that this principal does not exist in their KDC. 
+   Due to this, it's recommended that before upgrading a kerberized cluster to Ambari 2.7, you ensure this principal exists in your KDC database.
+   
+11.All Prior Upgrades are Finalized
+  Any prior upgrade started with Ambari must be finalized.
+  
+12.Apache Zeppelin Notebooks and Configuration File Storage
+  >In releases of Zeppelin earlier than HDP-2.6.3, notebooks and configuration files were stored on the local disk of the Zeppelin server. 
+   In HDP-2.6.3+, the default Zeppelin storage is HDFS.
+
+  >When upgrading to HDP-2.6.3+ from versions earlier than HDP-2.6.3, perform the steps described in Enabling HDFS Storage for Zeppelin Notebooks 
+   and Configuration in HDP-2.6.3+.
+
+​>>>B.Prepare to Upgrade
+
+Make sure that you have reviewed and completed all prerequisites described in previous chapters.
+It is strongly recommended that you perform backups of all your databases before beginning the upgrade.
+
+**Checkpoint HDFS**
+1.Perform the following steps on the NameNode host. If you are configured for NameNode HA, perform the following steps on the Active NameNode. 
+  You can locate the Active NameNode from Ambari Web > Services > HDFS in the Summary area.
+
+2.Check the NameNode directory to ensure that there is no snapshot of any prior HDFS upgrade. 
+  Specifically, using Ambari Web, browse to Services > HDFS > Configs, and examine the dfs.namenode.name.dir in the NameNode Directories property. 
+  Make sure that only a /current directory and no /previous directory exists on the NameNode host.
+
+3.Create the following log and other files. Creating these logs allows you to check the integrity of the file system after the Stack upgrade.
+  As the HDFS user,
+  $"su -l [HDFS_USER]"
+  
+  run the following (where [HDFS_USER] is the HDFS Service user, for example, hdfs):
+  
+  > Run fsck with the following flags and send the results to a log. The resulting file contains a complete block map of the file system. 
+    You use this log later to confirm the upgrade.
+	$hdfs fsck / -files -blocks -locations > dfs-old-fsck-1.log
+  
+  > Create a list of all the DataNodes in the cluster.
+   $hdfs dfsadmin -report > dfs-old-report-1.log
+  
+  > Optional: Capture the complete namespace of the file system. The following command does a recursive listing of the root file system:
+   $hdfs dfs -ls -R / > dfs-old-lsr-1.log
+   
+  > Optional: Copy all unrecoverable data stored in HDFS to a local file system or to a backup instance of HDFS.
+
+4.Save the namespace. As the HDFS user, " su -l [HDFS_USER] ", you must put the cluster in Safe Mode.
+  $hdfs dfsadmin -safemode enter
+  $hdfs dfsadmin -saveNamespace
+  
+  	Note
+    In a highly-available NameNode configuration, the command
+ $hdfs dfsadmin -saveNamespace
+    sets a checkpoint in the first NameNode specified in the configuration, in dfs.ha.namenodes.[nameserviceID].
+    You can also use the
+ $dfsadmin -fs
+    option to specify which NameNode to connect. For example, to force a checkpoint in NameNode2:
+ $hdfs dfsadmin -fs hdfs://namenode2-hostname:namenode2-port -saveNamespace
+ 
+5.Copy the checkpoint files located in $[dfs.namenode.name.dir]/current into a backup directory.
+   Note
+    In a highly-available NameNode configuration, the location of the checkpoint depends on where the saveNamespace command is sent, 
+	as defined in the preceding step.
+
+6.Store the layoutVersion for the NameNode located at
+  $[dfs.namenode.name.dir]/current/VERSION, into a backup directory where
+  $[dfs.namenode.name.dir] is the value of the config parameter NameNode directories.
+  This file will be used later to verify that the layout version is upgraded.
+  
+7.As the HDFS user, " su -l [HDFS_USER] ", take the NameNode out of Safe Mode.
+  $hdfs dfsadmin -safemode leave
+  
+>>> C.Register and Install Target Version
+
+Before you use Ambari to perform the stack upgrade, you must register the software repositories for the new target version with Ambari and then install the software on all hosts in the cluster.
+
+​REGISTER TARGET VERSION
+>>STEPS--
+1.Log in to Ambari.
+2.Browse to Cluster Admin > Stack and Versions.
+3.Click the Versions tab. You see the version currently running, marked as Current.
+  Note
+  The full version depends on the HDP version you are actually running. For example, if you are currently running the HDP 3.0.1.0 release, 
+  you would see something like HDP-3.0.1.0-187 as the full version number
+4.Click Manage Versions.
+5.Proceed to register a new version by clicking Register Version.
+6.Select the software version and method of delivery for your cluster.
+  a. Choose HDP Stack.
+     Available HDP minor versions display on tabs. When you click a tab, Ambari displays available maintenance versions for that HDP Stack on a drop-down list. 
+	 When you click a specific maintenance version, a list of available Services and their version displays in a table
+  b. Choose HDP Version.
+     If your Ambari host has internet access, available maintenance versions display as options in a drop-down list. 
+	 If you have a Version Definition File (VDF) for a version that is not listed, you can click Add Version… and upload the VDF file. 
+	 In addition, a Default Version Definition is also included in the list if you do not have Internet access or are not sure which specific version to install.
+	 If you choose the Default Version Definition, you must enter a "two-digit Version Number" in the Name input field.
+  c. Choose Repository Delivery Method.
+     >Use private Repository
+      Using a private repository requires internet connectivity. To use the private software repositories, 
+	  see the list of available HDP Repositories for each OS
+	 >Use Local Repository
+      Using a local repository requires that you have configured the software in a repository available in your network. 
+	  If you are using a local repository, enter the Base URLs for your local repository.
+7.Click Save.
+8.Click Dashboard.
+
+**Install Target Version**
+>>STEPS-->>
+1.Browse to Cluster Admin > Stack and Versions.
+2.Click the Versions tab.
+3.On a registered target version, click Install Packages and click OK to confirm.
+  The Install version operation starts. This installs the target version on all hosts in the cluster. 
+  You can monitor the progress of the install by clicking the Installing link.
+  When the installation completes, the Upgrade button replaces the Install Packages button.
+ 
+for managing versions : https://docs.cloudera.com/HDPDocuments/Ambari-2.7.3.0/administering-ambari/content/amb_managing_versions.html
+
+****PERFORM THE UPGRADE****
+
+There are two ways to upgrade. You should go for one type only.
+1.Perform Rolling Upgrade
+2.Perform Express Upgrade
+
+TO UPGRADE YOUR HDP VERSION
+>>STEPS->>
+1.Log in to Ambari.
+2.Browse to Cluster Admin > Stack and Versions.
+3.Click the Versions tab.
+  The registered and installed target HDP version displays an Upgrade button.
+4.Click Upgrade on the target version.
+  Based on your current HDP version and the target HDP version, Ambari performs a set of prerequisite checks to determine if you can perform 
+  a rolling or an express upgrade. A dialog displays the options available.
+5.Select the Express Upgrade method. (Only supported method for upgrading from HDP 2.6 to 3.0.1)
+  Advanced options are also available.
+  >Skip all Service Check failures
+   Ambari automatically skips any Service Check failures and completes the task without requiring user actions.
+   After all the Service Checks have run in a task, you see a summary of the failures and options to continue the upgrade or pause.
+  >Skip all Slave Component failures
+   Ambari automatically skips any Slave Component failures and completes the task of upgrading Slave components without requiring user actions. 
+   After all Slave Components have been upgraded, you see a summary of the failures and options to continue the upgrade or pause.
+6.Click Proceed.
+
+​***PERFORM EXPRESS UPGRADE***
+
+1.Ambari checks that your cluster meets prerequisites. A dialog displays the results:
+  a.If any required prerequisites are not met, the result displays an error.
+    You cannot proceed with the upgrade until you make the appropriate corrections and return to Perform Upgrade again.
+  b.If any optional prerequisites are not met, the result displays a warning.
+    You may proceed with the upgrade.
+  c.Ambari displays a list of configuration changes that occur during the upgrade
+2.When the prerequisite checks complete, the upgrade starts. The time required to perform the upgrade depends on many factors.
+  As part of the upgrade process, each component in the cluster restarts in a serial fashion. The stop/start times contribute to the total upgrade time.
+3.The upgrade process includes the following stages. Some stages require that you complete an action during normal operation.
+  If any stage fails, the upgrade stops and prompts you for action.
+ 
+  Stage                                                 Description                                                   Action Required
+ 
+ NOTE: To see all these stages description and Action Required use below link
+   link: https://docs.cloudera.com/HDPDocuments/Ambari-2.7.1.0/bk_ambari-upgrade/content/upgrading_HDP_perform_express_upgrade.html
+
+4.When the upgrade stages complete, you may choose to Finalize the upgrade, or to Finalize Later. 
+  Finalizing later gives you a chance to perform more validation on the cluster.
+  Note
+  If you choose to finalize later, both versions will be listed on the Stack and Versions tab with the starting version displaying as Current. 
+  It is not until you finalize that Ambari makes the target version the current version. Also, until you finalize, 
+  you will not be able to perform operational changes to the cluster (such as move components, change configurations, etc).
+
+5.Click Finalize to complete the express upgrade process.
+  
+  
+***PERFORM ROLLING UPGRADE***
+
+1.Ambari checks that your cluster meets prerequisites. A dialog displays the results:
+  a. If any required prerequisites are not met, the result displays an error.
+     You cannot proceed with the upgrade until you make the appropriate corrections and return to Perform Upgrade again.
+  b. If any optional prerequisites are not met, the result displays a warning.
+     You may proceed with the upgrade.
+  c. Ambari displays a list of configuration changes that occur during the upgrade
+2.When the prerequisite checks complete, the upgrade starts. The time required to perform the upgrade depends on many factors. 
+  As part of the upgrade process, each component in the cluster restarts in a serial fashion. The stop/start times contribute to the total upgrade time.
+3.The upgrade process includes the following stages. Some stages require that you complete an action during normal operation.
+  If any stage fails, the upgrade stops and prompts you for action.
+
+     Stage                                                 Description                                                   Action Required
+	 
+	 NOTE: To see all these stages description and Action Required use below link
+	 link: https://docs.cloudera.com/HDPDocuments/Ambari-2.7.1.0/bk_ambari-upgrade/content/upgrading_HDP_perform_rolling_upgrade.html
+	 
+4.When the rolling upgrade stages complete, may choose to Finalize the upgrade, to Finalize Later or to Downgrade. 
+  Finalizing later gives you a chance to perform more validation on the cluster. Downgrade moves the cluster version back to the previous version 
+  (basically: reverses the upgrade process stages). Once finalized, you cannot downgrade back to the previous version
+  NOTE
+  If you choose to finalize later, both versions will be listed on the Stack and Versions tab with the starting version displaying as Current. 
+  It is not until you finalize that Ambari makes the target version the current version. Also, until you finalize, 
+  you will not be able to perform operational changes to the cluster (such as move components, change configurations, etc)
+  
+5.Click Finalize to complete the rolling upgrade process.
+
+***​Upgrade Troubleshooting***
+https://docs.cloudera.com/HDPDocuments/Ambari-2.7.1.0/bk_ambari-upgrade/content/ch04s05.html
+
+
+****************UPGRADE COMPLETES HERE*************************
